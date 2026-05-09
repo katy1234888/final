@@ -1,238 +1,181 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import numpy as np
+from sklearn.linear_model import LinearRegression
 
-st.set_page_config(layout="wide")
+st.set_page_config(page_title="Seashells Intelligence System", layout="wide")
 
-# Sidebar navigation
-slides = [
-    "Title",
-    "Executive Summary",
-    "Volume & Satisfaction",
-    "Customer Sentiment",
-    "Segment Risk",
-    "Complaint Drivers",
-    "Geographic Performance",
-    "Courier & Root Causes",
-    "Impact Funnel",
-    "Action Plan",
-    "Financial Impact",
-    "Implementation Roadmap",
-    "Next Steps",
-    "Monitoring Dashboard",
-    "Interactive Dashboard"
+# --------------------------
+# HEADER
+# --------------------------
+st.title("🌊 Seashells Logistics Pvt Ltd")
+st.subheader("📊 AI-Powered Delivery Intelligence System")
+
+# --------------------------
+# FILE UPLOAD + VALIDATION
+# --------------------------
+st.sidebar.header("📁 Upload Data")
+
+required_cols = ["Date", "City", "Courier", "Segment", "Orders", "On-Time %", "RTO %", "Complaints %"]
+
+uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+
+def validate_data(df):
+    missing = [col for col in required_cols if col not in df.columns]
+    return missing
+
+def load_sample():
+    return pd.DataFrame({
+        "Date": pd.date_range(start="2023-10-01", periods=50),
+        "City": np.random.choice(["Mumbai","Pune","Indore","Nagpur"],50),
+        "Courier": np.random.choice(["QuickShip","ShipNow","FastEx"],50),
+        "Segment": np.random.choice(["New","Repeat","High Value"],50),
+        "Orders": np.random.randint(500,2000,50),
+        "On-Time %": np.random.randint(50,90,50),
+        "RTO %": np.random.randint(5,25,50),
+        "Complaints %": np.random.randint(10,35,50)
+    })
+
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
+    missing_cols = validate_data(df)
+
+    if missing_cols:
+        st.error(f"Missing columns: {missing_cols}")
+        st.stop()
+    df["Date"] = pd.to_datetime(df["Date"])
+else:
+    df = load_sample()
+
+# --------------------------
+# SESSION STATE FILTERS
+# --------------------------
+st.sidebar.header("🔎 Filters")
+
+date_range = st.sidebar.date_input("Date Range",
+                                  [df["Date"].min(), df["Date"].max()])
+
+courier = st.sidebar.multiselect("Courier", df["Courier"].unique(), df["Courier"].unique())
+segment = st.sidebar.multiselect("Segment", df["Segment"].unique(), df["Segment"].unique())
+city = st.sidebar.multiselect("City", df["City"].unique(), df["City"].unique())
+
+filtered = df[
+    (df["Date"] >= pd.to_datetime(date_range[0])) &
+    (df["Date"] <= pd.to_datetime(date_range[1])) &
+    (df["Courier"].isin(courier)) &
+    (df["Segment"].isin(segment)) &
+    (df["City"].isin(city))
 ]
 
-choice = st.sidebar.radio("Navigate", slides)
+# --------------------------
+# KPI CARDS WITH TREND
+# --------------------------
+st.header("📊 Executive KPIs")
 
-# -------------------------
-# Slide 1
-# -------------------------
-if choice == "Title":
-    st.title("📦 Delivery Experience Decline During Festive Surge")
-    st.subheader("End-to-End Customer & Operational Diagnostics")
-    st.write("OCT – DEC · TIER-1 & TIER-2 CITIES")
+def calc_trend(series):
+    return round(series.iloc[-1] - series.iloc[0], 2)
 
-# -------------------------
-# Slide 2
-# -------------------------
-elif choice == "Executive Summary":
-    st.header("EXECUTIVE SUMMARY")
+orders_trend = calc_trend(filtered["Orders"])
+ontime_trend = calc_trend(filtered["On-Time %"])
 
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("NPS", "-44")
-    col2.metric("On-Time Delivery", "62%")
-    col3.metric("SLA Breach", "38%")
-    col4.metric("Complaint Rate", "27%")
-    col5.metric("RTO Rate", "18%")
+col1, col2, col3, col4 = st.columns(4)
 
-    st.write("Peak-demand inefficiencies hurt both experience and profitability.")
+col1.metric("Orders", int(filtered["Orders"].sum()), delta=orders_trend)
+col2.metric("On-Time %", round(filtered["On-Time %"].mean(),1), delta=ontime_trend)
+col3.metric("RTO %", round(filtered["RTO %"].mean(),1))
+col4.metric("Complaints %", round(filtered["Complaints %"].mean(),1))
 
-# -------------------------
-# Slide 3
-# -------------------------
-elif choice == "Volume & Satisfaction":
-    st.header("Demand Surged. Capacity Didn't")
+# --------------------------
+# AI INSIGHTS ENGINE
+# --------------------------
+st.header("🧠 Root Cause Insights")
 
-    df = pd.DataFrame({
-        "Month": ["Oct", "Nov", "Dec"],
-        "Orders": [100, 140, 170]
-    })
+if filtered["On-Time %"].mean() < 70:
+    worst_courier = filtered.groupby("Courier")["On-Time %"].mean().idxmin()
+    st.error(f"🚨 Low on-time performance driven by {worst_courier}")
 
-    fig = px.line(df, x="Month", y="Orders", title="Order Volume Trend")
-    st.plotly_chart(fig, use_container_width=True)
+if filtered["Complaints %"].mean() > 25:
+    worst_city = filtered.groupby("City")["Complaints %"].mean().idxmax()
+    st.warning(f"⚠️ Complaints highest in {worst_city}")
 
-    st.write("Demand surge without capacity planning caused cascading operational failure.")
+# --------------------------
+# TREND ANALYSIS
+# --------------------------
+st.header("📈 Trends")
 
-# -------------------------
-# Slide 4
-# -------------------------
-elif choice == "Customer Sentiment":
-    st.header("Customer Sentiment")
+trend = filtered.groupby("Date").agg({
+    "Orders":"sum",
+    "On-Time %":"mean"
+}).reset_index()
 
-    df = pd.DataFrame({
-        "Type": ["Promoters", "Passives", "Detractors"],
-        "Value": [22, 12, 66]
-    })
+fig = px.line(trend, x="Date", y=["Orders","On-Time %"])
+st.plotly_chart(fig, use_container_width=True)
 
-    fig = px.pie(df, names="Type", values="Value", title="NPS Distribution")
-    st.plotly_chart(fig, use_container_width=True)
+# --------------------------
+# FORECASTING (ML)
+# --------------------------
+st.header("🔮 Forecasting (Next 7 Days)")
 
-    st.write("NPS = -44 → Majority customers are unhappy")
+trend["Day"] = np.arange(len(trend))
+X = trend[["Day"]]
+y = trend["Orders"]
 
-# -------------------------
-# Slide 5
-# -------------------------
-elif choice == "Segment Risk":
-    st.header("High-Value Customers Are Walking")
+model = LinearRegression().fit(X, y)
 
-    df = pd.DataFrame({
-        "Segment": ["New", "Repeat", "High Value"],
-        "NPS": [-35, -42, -60]
-    })
+future_days = np.arange(len(trend), len(trend)+7).reshape(-1,1)
+forecast = model.predict(future_days)
 
-    fig = px.bar(df, x="Segment", y="NPS", title="NPS by Segment")
-    st.plotly_chart(fig, use_container_width=True)
+forecast_df = pd.DataFrame({
+    "Day": future_days.flatten(),
+    "Forecast Orders": forecast
+})
 
-# -------------------------
-# Slide 6
-# -------------------------
-elif choice == "Complaint Drivers":
-    st.header("Late Delivery Dominates Complaints")
+fig2 = px.line(forecast_df, x="Day", y="Forecast Orders", title="Order Forecast")
+st.plotly_chart(fig2, use_container_width=True)
 
-    df = pd.DataFrame({
-        "Issue": ["Late Delivery", "Delivery Failure", "Damaged", "Others"],
-        "Percent": [55, 25, 10, 10]
-    })
+# --------------------------
+# GEO HEATMAP
+# --------------------------
+st.header("🌍 City Performance Heatmap")
 
-    fig = px.bar(df, x="Issue", y="Percent", title="Complaint Breakdown")
-    st.plotly_chart(fig, use_container_width=True)
+city_perf = filtered.groupby("City")["On-Time %"].mean().reset_index()
 
-# -------------------------
-# Slide 7
-# -------------------------
-elif choice == "Geographic Performance":
-    st.header("Tier-2 Cities Are Operationally Broken")
+fig3 = px.scatter_geo(city_perf,
+                      locations="City",
+                      locationmode="country names",
+                      size="On-Time %",
+                      title="City Performance")
 
-    df = pd.DataFrame({
-        "City": ["Mumbai", "Pune", "Indore", "Nagpur"],
-        "On-Time %": [78, 65, 55, 50]
-    })
+st.plotly_chart(fig3, use_container_width=True)
 
-    fig = px.bar(df, x="City", y="On-Time %", title="City Performance")
-    st.plotly_chart(fig, use_container_width=True)
+# --------------------------
+# DRILL-DOWN
+# --------------------------
+st.header("🔍 Drill-Down")
 
-# -------------------------
-# Slide 8
-# -------------------------
-elif choice == "Courier & Root Causes":
-    st.header("Courier Performance")
+selected_city = st.selectbox("Select City", filtered["City"].unique())
 
-    df = pd.DataFrame({
-        "Courier": ["QuickShip", "ShipNow", "FastEx"],
-        "SLA Breach %": [32, 22, 15]
-    })
+drill = filtered[filtered["City"] == selected_city]
 
-    fig = px.bar(df, x="Courier", y="SLA Breach %", title="Courier Performance")
-    st.plotly_chart(fig, use_container_width=True)
+fig4 = px.bar(drill, x="Courier", y="On-Time %", color="Courier")
+st.plotly_chart(fig4, use_container_width=True)
 
-# -------------------------
-# Slide 9
-# -------------------------
-elif choice == "Impact Funnel":
-    st.header("Revenue Leakage Funnel")
+# --------------------------
+# COHORT ANALYSIS
+# --------------------------
+st.header("👥 Cohort Analysis")
 
-    df = pd.DataFrame({
-        "Stage": ["Orders", "Delayed", "Complaints", "Lost Repeat"],
-        "Value": [100, 38, 27, 6]
-    })
+cohort = filtered.groupby(["Segment","Courier"]).agg({
+    "Orders":"sum"
+}).reset_index()
 
-    fig = px.funnel(df, x="Value", y="Stage")
-    st.plotly_chart(fig, use_container_width=True)
+fig5 = px.bar(cohort, x="Segment", y="Orders", color="Courier", barmode="group")
+st.plotly_chart(fig5, use_container_width=True)
 
-# -------------------------
-# Slide 10
-# -------------------------
-elif choice == "Action Plan":
-    st.header("Three Fixes. Measurable Impact")
-
-    st.write("""
-    - Reduce QuickShip Load → SLA 32% → 18%
-    - Improve Communication → Complaints 27% → 18%
-    - Pre-Call Delivery → RTO 18% → 12%
-    """)
-
-# -------------------------
-# Slide 11
-# -------------------------
-elif choice == "Financial Impact":
-    st.header("Projected ROI")
-
-    df = pd.DataFrame({
-        "Category": ["Revenue Recovery", "Cost Savings", "LTV Uplift"],
-        "Value": [170000, 378000, 250000]
-    })
-
-    fig = px.bar(df, x="Category", y="Value", title="Financial Impact ($)")
-    st.plotly_chart(fig, use_container_width=True)
-
-# -------------------------
-# Slide 12
-# -------------------------
-elif choice == "Implementation Roadmap":
-    st.header("90-Day Plan")
-
-    st.write("""
-    Phase 1: Stabilization  
-    Phase 2: Optimization  
-    Phase 3: Scaling  
-    """)
-
-# -------------------------
-# Slide 13
-# -------------------------
-elif choice == "Next Steps":
-    st.header("Execution Plan")
-
-    st.write("""
-    1. Reduce QuickShip Load  
-    2. Improve Communication  
-    3. Pre-call Delivery  
-    """)
-
-# -------------------------
-# Slide 14
-# -------------------------
-elif choice == "Monitoring Dashboard":
-    st.header("Live KPI Monitoring")
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("SLA Breach", "32%")
-    col2.metric("Complaint Rate", "27%")
-    col3.metric("NPS", "-44")
-
-# -------------------------
-# FINAL DASHBOARD
-# -------------------------
-elif choice == "Interactive Dashboard":
-    st.title("📊 Interactive Dashboard")
-
-    # Filters
-    city = st.selectbox("Select City", ["All", "Mumbai", "Pune", "Indore", "Nagpur"])
-
-    df = pd.DataFrame({
-        "City": ["Mumbai", "Pune", "Indore", "Nagpur"],
-        "On-Time": [78, 65, 55, 50],
-        "Complaints": [20, 25, 35, 40]
-    })
-
-    if city != "All":
-        df = df[df["City"] == city]
-
-    fig1 = px.bar(df, x="City", y="On-Time", title="On-Time Delivery")
-    fig2 = px.bar(df, x="City", y="Complaints", title="Complaint Rate")
-
-    st.plotly_chart(fig1, use_container_width=True)
-    st.plotly_chart(fig2, use_container_width=True)
-
-    st.write("Dynamic filtering simulates Power BI dashboard behavior.")
+# --------------------------
+# DOWNLOAD
+# --------------------------
+st.download_button("📥 Download Data",
+                   filtered.to_csv(index=False),
+                   "report.csv")
