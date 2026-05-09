@@ -1,195 +1,245 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import numpy as np
-from sklearn.linear_model import LinearRegression
-from gtts import gTTS
-import tempfile
-
-st.set_page_config(page_title="Seashells Intelligence System", layout="wide")
+import plotly.express as px
 
 # --------------------------
-# HEADER
+# CONFIG
 # --------------------------
-st.title("🌊 Seashells Logistics Pvt Ltd")
-st.subheader("📊 AI-Powered Delivery Intelligence System")
+st.set_page_config(page_title="Seashells Logistics Dashboard", layout="wide")
 
-# --------------------------
-# STORY MODE CONTROL
-# --------------------------
-if "step" not in st.session_state:
-    st.session_state.step = 0
-
-steps = ["Problem", "Impact", "Diagnosis", "Insights", "Forecast", "Solution"]
-
-col1, col2 = st.columns([8,1])
-with col2:
-    if st.button("➡️ Next"):
-        st.session_state.step = (st.session_state.step + 1) % len(steps)
-
-current_step = steps[st.session_state.step]
-st.markdown(f"## 🎬 Story Mode: {current_step}")
+st.title("📦 Seashells Logistics Pvt Ltd")
+st.subheader("🚚 Festive Surge Delivery Experience Dashboard")
 
 # --------------------------
-# FILE UPLOAD
+# SIDEBAR UPLOADS
 # --------------------------
-st.sidebar.header("📁 Upload Data")
+st.sidebar.header("📁 Upload All Data Files")
 
-required_cols = ["Date", "City", "Courier", "Segment", "Orders", "On-Time %", "RTO %", "Complaints %"]
+orders_file = st.sidebar.file_uploader("Orders Data", type=["csv"])
+nps_file = st.sidebar.file_uploader("NPS Data", type=["csv"])
+complaints_file = st.sidebar.file_uploader("Complaints Data", type=["csv"])
+delivery_file = st.sidebar.file_uploader("Delivery Data", type=["csv"])
+courier_file = st.sidebar.file_uploader("Courier Data", type=["csv"])
+city_file = st.sidebar.file_uploader("City Data", type=["csv"])
 
-uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
-
-def load_sample():
+# --------------------------
+# SAMPLE DATA (fallback)
+# --------------------------
+def sample_orders():
     return pd.DataFrame({
-        "Date": pd.date_range(start="2023-10-01", periods=60),
-        "City": np.random.choice(["Mumbai","Pune","Indore","Nagpur"],60),
-        "Courier": np.random.choice(["QuickShip","ShipNow","FastEx"],60),
-        "Segment": np.random.choice(["New","Repeat","High Value"],60),
-        "Orders": np.random.randint(500,2000,60),
-        "On-Time %": np.random.randint(50,90,60),
-        "RTO %": np.random.randint(5,25,60),
-        "Complaints %": np.random.randint(10,35,60)
+        "Date": pd.date_range(start="2023-10-01", periods=30),
+        "Orders": np.random.randint(500, 2000, 30)
     })
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    missing = [c for c in required_cols if c not in df.columns]
-    if missing:
-        st.error(f"Missing columns: {missing}")
-        st.stop()
-    df["Date"] = pd.to_datetime(df["Date"])
-else:
-    df = load_sample()
+def sample_nps():
+    return pd.DataFrame({
+        "Segment": ["New","Repeat","High Value"],
+        "NPS": [-30,-40,-60]
+    })
+
+def sample_complaints():
+    return pd.DataFrame({
+        "Issue": ["Late","Failed","Damaged"],
+        "Percent": [55,25,10]
+    })
+
+def sample_delivery():
+    return pd.DataFrame({
+        "City": ["Mumbai","Pune","Indore","Nagpur"],
+        "On-Time %": [78,65,55,50],
+        "RTO %": [10,15,20,25]
+    })
+
+def sample_courier():
+    return pd.DataFrame({
+        "Courier": ["QuickShip","ShipNow","FastEx"],
+        "On-Time %": [60,75,85]
+    })
+
+def sample_city():
+    return pd.DataFrame({
+        "City": ["Mumbai","Pune","Indore","Nagpur"],
+        "Complaints %": [20,25,30,35]
+    })
+
+# --------------------------
+# LOAD FUNCTION
+# --------------------------
+def load_data(file, sample, name):
+    if file:
+        df = pd.read_csv(file)
+        st.sidebar.success(f"{name} ✅")
+        return df
+    else:
+        st.sidebar.warning(f"{name} sample used")
+        return sample
+
+orders_df = load_data(orders_file, sample_orders(), "Orders")
+nps_df = load_data(nps_file, sample_nps(), "NPS")
+complaints_df = load_data(complaints_file, sample_complaints(), "Complaints")
+delivery_df = load_data(delivery_file, sample_delivery(), "Delivery")
+courier_df = load_data(courier_file, sample_courier(), "Courier")
+city_df = load_data(city_file, sample_city(), "City")
 
 # --------------------------
 # FILTERS
 # --------------------------
-st.sidebar.header("🔎 Filters")
+st.sidebar.header("🎛️ Filters")
 
-date_range = st.sidebar.date_input("Date Range", [df["Date"].min(), df["Date"].max()])
-courier = st.sidebar.multiselect("Courier", df["Courier"].unique(), df["Courier"].unique())
-segment = st.sidebar.multiselect("Segment", df["Segment"].unique(), df["Segment"].unique())
-city = st.sidebar.multiselect("City", df["City"].unique(), df["City"].unique())
+if "Date" in orders_df.columns:
+    orders_df["Date"] = pd.to_datetime(orders_df["Date"])
+    date_range = st.sidebar.date_input("Select Date Range", [])
 
-filtered = df[
-    (df["Date"] >= pd.to_datetime(date_range[0])) &
-    (df["Date"] <= pd.to_datetime(date_range[1])) &
-    (df["Courier"].isin(courier)) &
-    (df["Segment"].isin(segment)) &
-    (df["City"].isin(city))
-]
+if "Courier" in courier_df.columns:
+    courier_filter = st.sidebar.multiselect("Select Courier", courier_df["Courier"].unique())
+
+if "Segment" in nps_df.columns:
+    segment_filter = st.sidebar.multiselect("Select Segment", nps_df["Segment"].unique())
 
 # --------------------------
-# AI NARRATION
+# STORY MODE
 # --------------------------
-def generate_narration(step, df):
-    if step == "Problem":
-        return "During the festive surge, order volumes increased sharply, overwhelming logistics capacity."
-    elif step == "Impact":
-        return f"On-time delivery dropped to {round(df['On-Time %'].mean(),1)} percent, while complaints increased significantly."
-    elif step == "Diagnosis":
-        worst_city = df.groupby("City")["On-Time %"].mean().idxmin()
-        return f"The biggest operational failures are concentrated in {worst_city}."
-    elif step == "Insights":
-        worst_courier = df.groupby("Courier")["On-Time %"].mean().idxmin()
-        return f"{worst_courier} is the primary contributor to delays."
-    elif step == "Forecast":
-        return "If trends continue, delivery performance will degrade further during the next surge."
-    elif step == "Solution":
-        return "Optimizing courier allocation and improving infrastructure can significantly improve outcomes."
+st.header("📖 Story: What Went Wrong?")
 
-def play_voice(text):
-    tts = gTTS(text)
-    tmp = tempfile.NamedTemporaryFile(delete=False)
-    tts.save(tmp.name)
-    audio_file = open(tmp.name, 'rb')
-    st.audio(audio_file.read(), format='audio/mp3')
-
-narration = generate_narration(current_step, filtered)
-st.info(f"🧠 AI Narration: {narration}")
-
-if st.checkbox("🔊 Play Voice Narration"):
-    play_voice(narration)
+st.image("https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d", use_container_width=True)
+st.write("During festive surge, orders increased sharply while delivery quality dropped.")
 
 # --------------------------
-# KPI SECTION
+# KPI METRICS
 # --------------------------
-st.markdown("## 📊 Executive KPIs")
+st.header("📊 Key Metrics")
 
 col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("Orders", int(filtered["Orders"].sum()))
-col2.metric("On-Time %", round(filtered["On-Time %"].mean(),1))
-col3.metric("RTO %", round(filtered["RTO %"].mean(),1))
-col4.metric("Complaints %", round(filtered["Complaints %"].mean(),1))
+col1.metric("Orders Peak", f"{orders_df['Orders'].max()}")
+col2.metric("Avg NPS", f"{nps_df['NPS'].mean():.1f}")
+col3.metric("On-Time Avg", f"{delivery_df['On-Time %'].mean():.1f}%")
+col4.metric("Top Complaint", complaints_df.sort_values("Percent", ascending=False).iloc[0]["Issue"])
 
 # --------------------------
-# STORY VISUALS
+# ORDERS TREND
 # --------------------------
-if current_step == "Problem":
-    st.image("https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d", use_container_width=True)
+st.header("📈 Orders Trend")
 
-elif current_step == "Impact":
-    st.image("https://images.unsplash.com/photo-1553413077-190dd305871c", use_container_width=True)
-
-elif current_step == "Diagnosis":
-    fig = px.bar(filtered.groupby("City")["On-Time %"].mean().reset_index(),
-                 x="City", y="On-Time %")
-    st.plotly_chart(fig, use_container_width=True)
-
-elif current_step == "Insights":
-    fig = px.bar(filtered.groupby("Courier")["On-Time %"].mean().reset_index(),
-                 x="Courier", y="On-Time %", color="Courier")
-    st.plotly_chart(fig, use_container_width=True)
-
-elif current_step == "Forecast":
-    trend = filtered.groupby("Date")["Orders"].sum().reset_index()
-    trend["Day"] = np.arange(len(trend))
-
-    model = LinearRegression().fit(trend[["Day"]], trend["Orders"])
-    future = np.arange(len(trend), len(trend)+7).reshape(-1,1)
-    forecast = model.predict(future)
-
-    forecast_df = pd.DataFrame({"Day": future.flatten(), "Forecast Orders": forecast})
-
-    fig = px.line(forecast_df, x="Day", y="Forecast Orders")
-    st.plotly_chart(fig, use_container_width=True)
-
-elif current_step == "Solution":
-    st.image("https://images.unsplash.com/photo-1605902711834-8b11c3c0d5d6", use_container_width=True)
-    st.success("""
-    🚀 Recommended Actions:
-    - Optimize courier allocation  
-    - Improve Tier-2 infrastructure  
-    - Add proactive communication  
-    - Plan for surge capacity  
-    """)
+fig_orders = px.line(orders_df, x="Date", y="Orders")
+st.plotly_chart(fig_orders, use_container_width=True)
 
 # --------------------------
-# ADDITIONAL ANALYTICS
+# NPS ANALYSIS
 # --------------------------
-st.markdown("## 🔍 Deep Dive Analytics")
+st.header("😊 Customer Experience (NPS)")
 
-selected_city = st.selectbox("Select City", filtered["City"].unique())
-drill = filtered[filtered["City"] == selected_city]
-
-fig = px.bar(drill, x="Courier", y="On-Time %", color="Courier")
-st.plotly_chart(fig, use_container_width=True)
-
-# Cohort
-cohort = filtered.groupby(["Segment","Courier"])["Orders"].sum().reset_index()
-fig2 = px.bar(cohort, x="Segment", y="Orders", color="Courier", barmode="group")
-st.plotly_chart(fig2, use_container_width=True)
+fig_nps = px.bar(nps_df, x="Segment", y="NPS", color="Segment")
+st.plotly_chart(fig_nps, use_container_width=True)
 
 # --------------------------
-# DOWNLOAD
+# COMPLAINTS
 # --------------------------
-st.download_button("📥 Download Report",
-                   filtered.to_csv(index=False),
-                   "seashells_report.csv")
+st.header("📞 Complaint Breakdown")
+
+fig_comp = px.pie(complaints_df, names="Issue", values="Percent")
+st.plotly_chart(fig_comp, use_container_width=True)
 
 # --------------------------
-# DATA TABLE
+# DELIVERY PERFORMANCE
 # --------------------------
-st.markdown("## 📄 Data Table")
-st.dataframe(filtered)
+st.header("🚚 Delivery Performance by City")
+
+fig_del = px.bar(delivery_df, x="City", y="On-Time %")
+st.plotly_chart(fig_del, use_container_width=True)
+
+# --------------------------
+# COURIER PERFORMANCE
+# --------------------------
+st.header("🚛 Courier Performance")
+
+fig_courier = px.bar(courier_df, x="Courier", y="On-Time %", color="Courier")
+st.plotly_chart(fig_courier, use_container_width=True)
+
+# --------------------------
+# CITY COMPLAINTS
+# --------------------------
+st.header("🏙️ City-Level Complaints")
+
+fig_city = px.bar(city_df, x="City", y="Complaints %", color="City")
+st.plotly_chart(fig_city, use_container_width=True)
+
+# --------------------------
+# ROOT CAUSE ANALYSIS
+# --------------------------
+st.header("🔍 Root Cause Analysis")
+
+st.write("""
+Top Issues Identified:
+- Late Deliveries → 55%
+- Failed Deliveries → 25%
+- Poor Courier Performance in Tier 2 cities
+- Capacity mismatch during peak demand
+""")
+
+st.image("https://images.unsplash.com/photo-1605902711622-cfb43c44367f", use_container_width=True)
+
+# --------------------------
+# SOLUTIONS (WITH NUMBERS)
+# --------------------------
+st.header("🛠️ Solutions & Impact")
+
+solutions = pd.DataFrame({
+    "Solution": ["Add Fleet","Improve Routing","Courier Ranking","Hub Automation"],
+    "Impact (%)": [20,15,10,12]
+})
+
+fig_sol = px.bar(solutions, x="Solution", y="Impact (%)")
+st.plotly_chart(fig_sol, use_container_width=True)
+
+st.write("""
+Expected Improvements:
+- On-Time Delivery: +20%
+- Complaints: -30%
+- NPS: +25 points
+""")
+
+# --------------------------
+# FINAL EXEC DASHBOARD
+# --------------------------
+st.header("📊 Executive Dashboard")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.plotly_chart(fig_orders, use_container_width=True)
+    st.plotly_chart(fig_nps, use_container_width=True)
+
+with col2:
+    st.plotly_chart(fig_del, use_container_width=True)
+    st.plotly_chart(fig_courier, use_container_width=True)
+
+# --------------------------
+# AI NARRATION STYLE
+# --------------------------
+st.header("🤖 AI Summary")
+
+st.write("""
+🚀 “During festive surge, order volume increased sharply.
+However, delivery capacity failed to scale proportionally.
+
+This led to:
+- Drop in on-time deliveries
+- Surge in complaints
+- Significant NPS decline
+
+Key drivers:
+- Courier inefficiencies
+- City-level bottlenecks
+- Poor demand forecasting
+
+Recommended actions:
+- Expand fleet capacity
+- Optimize routing
+- Prioritize high-value customers
+- Strengthen courier SLAs
+
+Expected outcome:
+A 20–30% improvement in delivery performance and customer satisfaction.”
+""")
